@@ -26,9 +26,10 @@ class LogParser:
             self.LOG_PATTERN = re.compile(
                 r'(?P<ip_address>\d{1,3}(?:\.\d{1,3}){3}) - - '
                 r'\[(?P<timestamp>[^\]]+)\] '
-                r'"(?P<method>\S+)\s(?P<path>[^"]+?)\sHTTP/\d\.\d" '
+                r'"(?P<method>[A-Z]+) (?P<path>\S+) HTTP/\d(?:\.\d+)?\" '
                 r'(?P<status_code>\d{3}) (?P<bytes_sent>\d+|-) '
-                r'"(?P<referrer>[^"]*)" "(?P<user_agent>[^"]+)"'
+                r'"(?P<referrer>[^"]*)" '
+                r'"(?P<user_agent>.*)"'
             )
 
     def parse_line(self, log_line):
@@ -59,3 +60,4 @@ class LogParser:
         else:
             logging.warning(f"Malformed log line skipped: {log_line.strip()}")
             return None
+

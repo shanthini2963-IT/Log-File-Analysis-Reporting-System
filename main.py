@@ -1,66 +1,64 @@
-# main.py
-
 import argparse
 import logging
 import configparser
 from tabulate import tabulate
 from log_parser import LogParser
 from mysql_handler import MySQLHandler
+from datetime import datetime
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 class CLIManager:
-    """Manages the command-line interface."""
     def __init__(self, db_handler):
         self.db_handler = db_handler
-        self.parser = argparse.ArgumentParser(description="Web Server Log Analyzer & Reporting CLI")
-        self._setup_parser()
+        self.parser = argparse.ArgumentParser(description="Web Server Log Analyzer CLI")
+        self._add_subcommands()
 
-    def _setup_parser(self):
-        subparsers = self.parser.add_subparsers(dest='command', help='Available commands')
+    def _add_subcommands(self):
+        subparsers = self.parser.add_subparsers(dest='command', help='Main commands')
 
-        # Process logs
-        process_parser = subparsers.add_parser('process_logs', help='Parse and load logs from a file')
-        process_parser.add_argument('file_path', type=str, help='Path to the log file')
-        process_parser.add_argument('--batch_size', type=int, default=1000, help='Batch size for DB inserts')
+    # Command to process logs
+        process_parser = subparsers.add_parser('process_logs', help='Load logs from a file')
+        process_parser.add_argument('file_path', type=str, help='Path to log file')
+        process_parser.add_argument('--batch_size', type=int, default=1000, help='Insert batch size')
 
-        # Report command
-        report_parser = subparsers.add_parser('generate_report', help='Generate analytical reports')
-        report_subparsers = report_parser.add_subparsers(dest='report_type', help='Types of reports')
+    # Command to generate reports
+        report_parser = subparsers.add_parser('generate_report', help='Generate reports')
+        report_subs = report_parser.add_subparsers(dest='report_type', help='Report types')
 
-        top_ips_parser = report_subparsers.add_parser('top_n_ips', help='Top N requesting IP addresses')
-        top_ips_parser.add_argument('n', type=int, default=10, help='Number of top IPs')
+        report_subs.add_parser('status_code_distribution', help='Show status code breakdown')
+        report_subs.add_parser('hourly_traffic', help='Show hourly traffic volume')
+        report_subs.add_parser('os_distribution', help='Show OS traffic breakdown')
 
-        status_code_parser = report_subparsers.add_parser('status_code_distribution', help='HTTP status code breakdown')
+        top_ips = report_subs.add_parser('top_n_ips', help='Top IPs by request count')
+        top_ips.add_argument('n', type=int, help='Number of IPs to show')
 
-        hourly_traffic_parser = report_subparsers.add_parser('hourly_traffic', help='Traffic distribution by hour')
+        top_urls = report_subs.add_parser('top_n_urls', help='Top requested URLs')
+        top_urls.add_argument('n', type=int, help='Number of URLs to show')
 
-        top_urls_parser = report_subparsers.add_parser('top_n_urls', help='Top N most requested URLs')
-        top_urls_parser.add_argument('n', type=int, help='Number of top URLs')
+        error_logs = report_subs.add_parser('error_logs', help='Logs for specific HTTP error code')
+        error_logs.add_argument('status_code', type=int, help='Error status code (e.g., 404)')
 
-        os_dist_parser = report_subparsers.add_parser('os_distribution', help='Breakdown of traffic by OS')
-
-        error_logs_parser = report_subparsers.add_parser('error_logs', help='Show error logs by status code')
-        error_logs_parser.add_argument('status_code', type=int, help='Status code (e.g., 404)')
-
+    # ✅ New: Error logs filtered by specific date
+        error_logs_by_date = report_subs.add_parser('error_logs_by_date', help='Logs for all errors on a specific date')
+        error_logs_by_date.add_argument('date', type=str, help='Date in YYYY-MM-DD format')
+        
     def run(self):
         args = self.parser.parse_args()
 
         if args.command == 'process_logs':
             self._process_logs(args.file_path, args.batch_size)
-
         elif args.command == 'generate_report':
             self._generate_report(args)
-
         else:
             self.parser.print_help()
 
     def _process_logs(self, file_path, batch_size):
         log_parser = LogParser()
-        processed_count = 0
-        batch = []
+        batch, total = [], 0
 
         try:
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -70,64 +68,51 @@ class CLIManager:
                         batch.append(parsed)
                         if len(batch) >= batch_size:
                             self.db_handler.insert_batch_log_entries(batch)
-                            processed_count += len(batch)
+                            total += len(batch)
                             batch = []
                 if batch:
                     self.db_handler.insert_batch_log_entries(batch)
-                    processed_count += len(batch)
-            logging.info(f"Finished processing log file. Total lines loaded: {processed_count}")
+                    total += len(batch)
+            logging.info(f"Finished processing log file. Total lines loaded: {total}")
         except FileNotFoundError:
             logging.error(f"File not found: {file_path}")
         except Exception as e:
-            logging.error(f"Error during log processing: {e}")
+            logging.error(f"Error while processing logs: {e}")
 
     def _generate_report(self, args):
-        if args.report_type == 'top_n_ips':
-            results = self.db_handler.get_top_n_ips(args.n)
-            print(tabulate(results, headers=["IP Address", "Request Count"], tablefmt="grid"))
+        fetch = self.db_handler
 
-        elif args.report_type == 'status_code_distribution':
-            results = self.db_handler.get_status_code_distribution()
-            print(tabulate(results, headers=["Status Code", "Count", "Percentage"], tablefmt="grid"))
+        report_map = {
+            'status_code_distribution': lambda: fetch.get_status_code_distribution(),
+            'hourly_traffic': lambda: fetch.get_hourly_traffic(),
+            'os_distribution': lambda: fetch.get_os_distribution(),
+            'top_n_ips': lambda: fetch.get_top_n_ips(args.n),
+            'top_n_urls': lambda: fetch.get_top_n_requested_urls(args.n),
+            'error_logs': lambda: fetch.get_error_logs(args.status_code),
+            'error_logs_by_date': lambda: fetch.get_error_logs_by_date(args.date)
+        }
 
-        elif args.report_type == 'hourly_traffic':
-            results = self.db_handler.get_hourly_traffic()
-            print(tabulate(results, headers=["Hour", "Request Count"], tablefmt="grid"))
+        if args.report_type not in report_map:
+            logging.warning("Invalid report type specified.")
+            return
 
-        elif args.report_type == 'top_n_urls':
-            results = self.db_handler.get_top_n_requested_urls(args.n)
-            print(tabulate(results, headers=["URL Path", "Requests"], tablefmt="grid"))
-
-        elif args.report_type == 'os_distribution':
-            results = self.db_handler.get_os_distribution()
-            print(tabulate(results, headers=["Operating System", "Requests"], tablefmt="grid"))
-
-        elif args.report_type == 'error_logs':
-            results = self.db_handler.get_error_logs(args.status_code)
-            print(tabulate(results, headers=["IP Address", "URL Path", "Status", "Timestamp"], tablefmt="grid"))
-
+        results = report_map[args.report_type]()
+        if results:
+            print(tabulate(results, headers="keys", tablefmt="grid"))
         else:
-            logging.warning("Invalid report type.")
-            self.parser.print_help()
+            print("No data available for this report.")
 
 
 def main():
-    # Load config.ini
     config = configparser.ConfigParser()
     config.read('config.ini')
 
-    db_config = {
-        'host': config['mysql']['host'],
-        'user': config['mysql']['user'],
-        'password': config['mysql']['password'],
-        'database': config['mysql']['database']
-    }
-
-    db_handler = MySQLHandler(**db_config)
+    db_cfg = config['mysql']
+    db_handler = MySQLHandler(**db_cfg)
     db_handler.create_tables()
 
-    cli_manager = CLIManager(db_handler)
-    cli_manager.run()
+    cli = CLIManager(db_handler)
+    cli.run()
 
     db_handler.close()
 

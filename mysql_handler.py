@@ -1,10 +1,8 @@
-# mysql_handler.py
-
 import mysql.connector
 from mysql.connector import Error
 from datetime import datetime
 import logging
-from collections import defaultdict
+from user_agents import parse as parse_ua
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -13,13 +11,14 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 class MySQLHandler:
     """Handles MySQL connection, insertion, and reporting."""
 
-    def __init__(self, host, user, password, database):
+    def __init__(self, host, user, password, database, port):
         try:
             self.conn = mysql.connector.connect(
                 host=host,
                 user=user,
                 password=password,
-                database=database
+                database=database,
+                port=port
             )
             self.cursor = self.conn.cursor(dictionary=True)
             logging.info("Connected to MySQL database.")
@@ -34,6 +33,9 @@ class MySQLHandler:
                 CREATE TABLE IF NOT EXISTS user_agents (
                     id INT AUTO_INCREMENT PRIMARY KEY,
                     user_agent_string TEXT UNIQUE,
+                    os VARCHAR(100),
+                    browser VARCHAR(100),
+                    device_type VARCHAR(100),
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
@@ -59,24 +61,32 @@ class MySQLHandler:
             logging.error(f"Error creating tables: {e}")
             raise
 
-    def _get_or_insert_user_agent(self, user_agent):
-        """Returns user_agent ID; inserts if new."""
-        if not user_agent:
+    def _get_or_insert_user_agent(self, user_agent_str):
+        """Returns user_agent ID; inserts if new with parsed OS, browser, device."""
+        if not user_agent_str:
             return None
 
         try:
             self.cursor.execute(
                 "SELECT id FROM user_agents WHERE user_agent_string = %s",
-                (user_agent,)
+                (user_agent_str,)
             )
             result = self.cursor.fetchone()
             if result:
                 return result['id']
             else:
-                self.cursor.execute(
-                    "INSERT INTO user_agents (user_agent_string) VALUES (%s)",
-                    (user_agent,)
-                )
+                parsed_ua = parse_ua(user_agent_str)
+                os = parsed_ua.os.family
+                browser = parsed_ua.browser.family
+                device_type = "Mobile" if parsed_ua.is_mobile else \
+                              "Tablet" if parsed_ua.is_tablet else \
+                              "PC" if parsed_ua.is_pc else \
+                              "Bot" if parsed_ua.is_bot else "Other"
+
+                self.cursor.execute("""
+                    INSERT INTO user_agents (user_agent_string, os, browser, device_type)
+                    VALUES (%s, %s, %s, %s)
+                """, (user_agent_str, os, browser, device_type))
                 self.conn.commit()
                 return self.cursor.lastrowid
         except Error as e:
@@ -120,7 +130,6 @@ class MySQLHandler:
             logging.error(f"Batch insert failed: {e}")
 
     def get_top_n_ips(self, n):
-        """Returns top N IP addresses by request count."""
         try:
             self.cursor.execute("""
                 SELECT ip_address, COUNT(*) AS request_count
@@ -133,7 +142,7 @@ class MySQLHandler:
         except Error as e:
             logging.error(f"Failed to fetch top IPs: {e}")
             return []
-        
+
     def get_top_n_requested_urls(self, n):
         query = """
             SELECT path, COUNT(*) AS request_count
@@ -142,26 +151,19 @@ class MySQLHandler:
             ORDER BY request_count DESC
             LIMIT %s;
         """
-        cursor = self.conn.cursor()
-        cursor.execute(query, (n,))
-        results = cursor.fetchall()
-        cursor.close()
-        return results
-
+        self.cursor.execute(query, (n,))
+        return self.cursor.fetchall()
 
     def get_os_distribution(self):
         query = """
-            SELECT ua.os, COUNT(*) AS requests
-            FROM log_entries le
-            JOIN user_agents ua ON le.user_agent_id = ua.id
-            GROUP BY ua.os
+            SELECT os, COUNT(*) AS requests
+            FROM user_agents ua
+            JOIN log_entries le ON le.user_agent_id = ua.id
+            GROUP BY os
             ORDER BY requests DESC;
         """
-        cursor = self.conn.cursor()
-        cursor.execute(query)
-        results = cursor.fetchall()
-        cursor.close()
-        return results
+        self.cursor.execute(query)
+        return self.cursor.fetchall()
 
     def get_error_logs(self, status_code):
         query = """
@@ -171,12 +173,8 @@ class MySQLHandler:
             ORDER BY timestamp DESC
             LIMIT 100;
         """
-        cursor = self.conn.cursor()
-        cursor.execute(query, (status_code,))
-        results = cursor.fetchall()
-        cursor.close()
-        return results
-    
+        self.cursor.execute(query, (status_code,))
+        return self.cursor.fetchall()
 
     def get_hourly_traffic(self):
         query = """
@@ -185,16 +183,10 @@ class MySQLHandler:
             GROUP BY hour
             ORDER BY hour;
         """
-        cursor = self.conn.cursor()
-        cursor.execute(query)
-        results = cursor.fetchall()
-        cursor.close()
-        return results
-
-
+        self.cursor.execute(query)
+        return self.cursor.fetchall()
 
     def get_status_code_distribution(self):
-        """Returns HTTP status code distribution and percentage."""
         try:
             self.cursor.execute("SELECT COUNT(*) as total FROM log_entries")
             total = self.cursor.fetchone()['total']
@@ -213,9 +205,19 @@ class MySQLHandler:
         except Error as e:
             logging.error(f"Failed to fetch status distribution: {e}")
             return []
+        
+    def get_error_logs_by_date(self, date_str):
+        query = """
+            SELECT ip_address, path, status_code, timestamp
+            FROM log_entries
+            WHERE DATE(timestamp) = %s AND status_code >= 400
+            ORDER BY timestamp DESC
+        """
+        self.cursor.execute(query, (date_str,))
+        return self.cursor.fetchall()
+
 
     def close(self):
-        """Closes the DB connection."""
         if self.conn.is_connected():
             self.cursor.close()
             self.conn.close()
