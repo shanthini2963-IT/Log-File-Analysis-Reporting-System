@@ -118,5 +118,5 @@ pip install -r requirements.txt
 
 **Your Name**
 📧 \[shanthiniramanjaneya@gmail.com ]
-🔗 \[https://github.com/shanthini2963-IT]
+🔗 \[(https://github.com/shanthini2963-IT)]
 
