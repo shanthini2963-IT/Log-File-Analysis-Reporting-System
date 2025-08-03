@@ -45,7 +45,8 @@ def sanitize(s):
 def generate_log_entry():
     ip = fake.ipv4()
     date = random.choice(date_range)
-    timestamp = date.strftime("%d/%b/%Y:%H:%M:%S +0000")
+    random_date = datetime(2025, 7, 25) + timedelta(days=random.randint(0, 7), hours=random.randint(0, 23), minutes=random.randint(0, 59), seconds=random.randint(0, 59))
+    timestamp_str = random_date.strftime('%d/%b/%Y:%H:%M:%S +0000')
     method = random.choice(methods)
     path = random.choice(paths)
     version = random.choice(http_versions)
@@ -54,7 +55,7 @@ def generate_log_entry():
     referer = sanitize(random.choice(referrers))
     user_agent = sanitize(random.choice(user_agents))
 
-    return f'{ip} - - [{timestamp}] "{method} {path} {version}" {status} {size} "{referer}" "{user_agent}"\n'
+    return f'{ip} - - [{timestamp_str}] "{method} {path} {version}" {status} {size} "{referer}" "{user_agent}"\n'
 
 # Write logs to file
 with open(LOG_FILE_PATH, "w", encoding="utf-8") as f:

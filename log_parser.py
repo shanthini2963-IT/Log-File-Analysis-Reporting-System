@@ -38,7 +38,12 @@ class LogParser:
         if match:
             try:
                 timestamp_str = match.group("timestamp")
-                timestamp = datetime.strptime(timestamp_str, '%d/%b/%Y:%H:%M:%S %z')
+
+                # Try parsing with timezone first, fallback without
+                try:
+                    timestamp = datetime.strptime(timestamp_str, '%d/%b/%Y:%H:%M:%S %z')
+                except ValueError:
+                    timestamp = datetime.strptime(timestamp_str, '%d/%b/%Y:%H:%M:%S')
 
                 bytes_sent_str = match.group("bytes_sent")
                 bytes_sent = int(bytes_sent_str) if bytes_sent_str != '-' else 0
@@ -60,4 +65,3 @@ class LogParser:
         else:
             logging.warning(f"Malformed log line skipped: {log_line.strip()}")
             return None
-

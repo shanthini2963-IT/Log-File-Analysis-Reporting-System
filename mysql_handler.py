@@ -107,7 +107,7 @@ class MySQLHandler:
 
                 entries_to_insert.append((
                     entry['ip_address'],
-                    entry['timestamp'],
+                    entry["timestamp"].strftime('%Y-%m-%d %H:%M:%S'),
                     entry['method'],
                     entry['path'],
                     entry['status_code'],

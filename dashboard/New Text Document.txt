@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Log File Analysis Dashboard</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+  <div class="container">
+    <h1>📊 Log File Analysis & Reporting Dashboard</h1>
+
+    <div class="card">
+      <h2>Top IP Addresses</h2>
+      <canvas id="topIpsChart"></canvas>
+    </div>
+
+    <div class="card">
+      <h2>Status Code Distribution</h2>
+      <canvas id="statusCodeChart"></canvas>
+    </div>
+
+    <div class="card">
+      <h2>OS Distribution</h2>
+      <canvas id="osChart"></canvas>
+    </div>
+
+    <div class="card">
+      <h2>Hourly Traffic</h2>
+      <canvas id="hourlyTrafficChart"></canvas>
+    </div>
+  </div>
+
+  <script src="js/main.js"></script>
+</body>
+</html>
