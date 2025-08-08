@@ -1,10 +1,2 @@
-# Ignore ini files with credentials
-config.ini
-dashboard/config.ini
-
-# Ignore temporary files
-#output.txt
-
-# Optional: ignore Python bytecode and logs
-__pycache__/
-*.log
+config.ini 
+dashboard/config.ini 
